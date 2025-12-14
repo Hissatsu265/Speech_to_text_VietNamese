@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vietnamese Speech to Text Realtime</title>
+</head>
+<body>
+    <h1>Thử nghiệm STT Tiếng Việt</h1>
+    <button id="btnStart" onclick="startRecording()">Bắt đầu nói</button>
+    <button id="btnStop" onclick="stopRecording()" disabled>Dừng</button>
+    <div id="output" style="margin-top: 20px; font-size: 20px; color: blue;">...</div>
+
+    <script>
+        let socket;
+        let mediaRecorder;
+        let audioContext;
+        let processor;
+        let input;
+
+        function startRecording() {
+            document.getElementById('btnStart').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            document.getElementById('output').innerText = "Đang kết nối...";
+
+            // Kết nối WebSocket tới Server Python
+            socket = new WebSocket("ws://localhost:8000/ws/transcribe");
+
+            socket.onopen = async () => {
+                document.getElementById('output').innerText = "Đang nghe...";
+                
+                // Lấy quyền truy cập Mic
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                audioContext = new AudioContext({ sampleRate: 16000 }); // Bắt buộc 16kHz
+                input = audioContext.createMediaStreamSource(stream);
+                
+                // Processor xử lý buffer âm thanh (Legacy approach nhưng dễ hiểu)
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                input.connect(processor);
+                processor.connect(audioContext.destination);
+
+                processor.onaudioprocess = (e) => {
+                    if (socket.readyState === WebSocket.OPEN) {
+                        // Lấy dữ liệu raw audio
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        // Gửi mảng Float32 lên server
+                        socket.send(inputData.buffer); 
+                    }
+                };
+            };
+
+            socket.onmessage = (event) => {
+                // Nhận text từ server trả về
+                document.getElementById('output').innerText = event.data;
+            };
+        }
+
+        function stopRecording() {
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            
+            if (socket) socket.close();
+            if (processor) processor.disconnect();
+            if (input) input.disconnect();
+            if (audioContext) audioContext.close();
+            
+            document.getElementById('output').innerText += " (Đã dừng)";
+        }
+    </script>
+</body>
+</html>
