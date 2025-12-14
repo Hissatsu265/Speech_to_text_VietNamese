@@ -1,4 +1,7 @@
-
+"""
+Backend FastAPI cho Speech-to-Text Real-time
+Chạy: python main.py
+"""
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -11,7 +14,6 @@ import librosa
 
 app = FastAPI(title="Vietnamese STT Real-time API")
 
-# CORS để frontend có thể kết nối
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,26 +22,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- LOAD MODEL ---
 print("🔄 Đang load model...")
-MODEL_PATH = "./whisper-vietnamese-finetuned/final"
+MODEL_PATH = "./final"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 processor = WhisperProcessor.from_pretrained(MODEL_PATH)
 model = WhisperForConditionalGeneration.from_pretrained(MODEL_PATH).to(device)
 
-# ✅ CẤU HÌNH CHỐNG LẶP TỪ
 model.config.forced_decoder_ids = None
 model.config.suppress_tokens = []
 
 print(f"✅ Model loaded on: {device}")
 
-# --- BUFFER AUDIO ---
 class AudioBuffer:
-    """Buffer để tích lũy audio chunks trước khi transcribe"""
     def __init__(self, min_duration=2.0, sample_rate=16000):
-        self.buffer = deque(maxlen=int(30 * sample_rate))  # Max 30s
-        self.min_samples = int(min_duration * sample_rate)  # Min 2s
+        self.buffer = deque(maxlen=int(30 * sample_rate))
+        self.min_samples = int(min_duration * sample_rate)  
         self.sample_rate = sample_rate
     
     def add(self, audio_chunk):
@@ -155,18 +153,25 @@ if __name__ == "__main__":
         API_PORT = 8000
         
         # Tạo public URL với ngrok
-        public_url = ngrok.connect(
+        tunnel = ngrok.connect(
             API_PORT, 
             "http",
-            # ✅ Thay domain của bạn vào đây (hoặc bỏ dòng này để dùng URL random)
-            # domain="your-domain.ngrok-free.app"
+            # ✅ Thay domain của bạn vào đây (hoặc comment để dùng URL random)
+            domain="hailee-unrepresentational-ronnie.ngrok-free.dev"
         )
+        
+        # ✅ Lấy public URL từ tunnel object
+        public_url = tunnel.public_url
+        ws_url = public_url.replace('https://', 'wss://').replace('http://', 'ws://')
         
         print("\n" + "="*60)
         print("🌐 NGROK PUBLIC URL")
         print("="*60)
-        print(f"🔗 {public_url}")
-        print(f"📝 WebSocket: {public_url.replace('http', 'ws')}/ws/transcribe")
+        print(f"🔗 HTTP:  {public_url}")
+        print(f"📝 WebSocket: {ws_url}/ws/transcribe")
+        print("="*60)
+        print(f"💡 Mở frontend và paste URL này vào ô WebSocket URL:")
+        print(f"   {ws_url}/ws/transcribe")
         print("="*60 + "\n")
         
     except ImportError:

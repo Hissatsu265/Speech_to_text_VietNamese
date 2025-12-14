@@ -1,71 +1,355 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
-    <title>Vietnamese Speech to Text Realtime</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vietnamese Speech to Text - Real-time</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .config-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f7f7f7;
+            border-radius: 10px;
+        }
+        
+        .config-section label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 600;
+        }
+        
+        .config-section input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        #btnStart {
+            background: #10b981;
+            color: white;
+        }
+        
+        #btnStart:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+        
+        #btnStop {
+            background: #ef4444;
+            color: white;
+        }
+        
+        #btnStop:hover:not(:disabled) {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            text-align: center;
+        }
+        
+        .status.idle {
+            background: #e5e7eb;
+            color: #6b7280;
+        }
+        
+        .status.connecting {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .status.listening {
+            background: #d1fae5;
+            color: #065f46;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .output {
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 150px;
+            font-size: 18px;
+            line-height: 1.6;
+            color: #1f2937;
+        }
+        
+        .output.empty {
+            color: #9ca3af;
+            font-style: italic;
+        }
+        
+        .history {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .history-item {
+            padding: 10px;
+            background: #f3f4f6;
+            border-left: 3px solid #667eea;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .timestamp {
+            color: #6b7280;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Thử nghiệm STT Tiếng Việt</h1>
-    <button id="btnStart" onclick="startRecording()">Bắt đầu nói</button>
-    <button id="btnStop" onclick="stopRecording()" disabled>Dừng</button>
-    <div id="output" style="margin-top: 20px; font-size: 20px; color: blue;">...</div>
+    <div class="container">
+        <h1>🎤 Vietnamese STT Real-time</h1>
+        
+        <!-- Config WebSocket URL -->
+        <div class="config-section">
+            <label for="wsUrl">WebSocket URL:</label>
+            <input 
+                type="text" 
+                id="wsUrl" 
+                value="ws://localhost:8000/ws/transcribe"
+                placeholder="ws://your-ngrok-url.app/ws/transcribe"
+            >
+            <small style="color: #6b7280; margin-top: 5px; display: block;">
+                Nếu dùng ngrok, thay localhost bằng URL ngrok của bạn
+            </small>
+        </div>
+        
+        <!-- Buttons -->
+        <div class="buttons">
+            <button id="btnStart" onclick="startRecording()">
+                🎙️ Bắt đầu nói
+            </button>
+            <button id="btnStop" onclick="stopRecording()" disabled>
+                ⏹️ Dừng lại
+            </button>
+        </div>
+        
+        <!-- Status -->
+        <div id="status" class="status idle">
+            ⏸️ Chưa bắt đầu
+        </div>
+        
+        <!-- Output -->
+        <div id="output" class="output empty">
+            Nhấn "Bắt đầu nói" để bắt đầu...
+        </div>
+        
+        <!-- History -->
+        <div id="history" class="history"></div>
+    </div>
 
     <script>
         let socket;
-        let mediaRecorder;
         let audioContext;
         let processor;
         let input;
-
-        function startRecording() {
+        let isRecording = false;
+        
+        function updateStatus(text, className) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = text;
+            statusEl.className = `status ${className}`;
+        }
+        
+        function addToHistory(text) {
+            const historyEl = document.getElementById('history');
+            const timestamp = new Date().toLocaleTimeString('vi-VN');
+            
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            item.innerHTML = `
+                <div class="timestamp">${timestamp}</div>
+                <div>${text}</div>
+            `;
+            
+            historyEl.insertBefore(item, historyEl.firstChild);
+            
+            // Giới hạn 10 items
+            while (historyEl.children.length > 10) {
+                historyEl.removeChild(historyEl.lastChild);
+            }
+        }
+        
+        async function startRecording() {
             document.getElementById('btnStart').disabled = true;
             document.getElementById('btnStop').disabled = false;
-            document.getElementById('output').innerText = "Đang kết nối...";
-
-            // Kết nối WebSocket tới Server Python
-            socket = new WebSocket("ws://localhost:8000/ws/transcribe");
-
-            socket.onopen = async () => {
-                document.getElementById('output').innerText = "Đang nghe...";
+            
+            const wsUrl = document.getElementById('wsUrl').value.trim();
+            if (!wsUrl) {
+                alert('Vui lòng nhập WebSocket URL!');
+                document.getElementById('btnStart').disabled = false;
+                return;
+            }
+            
+            updateStatus('⏳ Đang kết nối...', 'connecting');
+            
+            try {
+                // Kết nối WebSocket
+                socket = new WebSocket(wsUrl);
                 
-                // Lấy quyền truy cập Mic
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                socket.onopen = async () => {
+                    updateStatus('🎤 Đang nghe... Hãy nói gì đó!', 'listening');
+                    isRecording = true;
+                    
+                    // Lấy quyền microphone
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            channelCount: 1,
+                            sampleRate: 16000,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                        } 
+                    });
+                    
+                    audioContext = new AudioContext({ sampleRate: 16000 });
+                    input = audioContext.createMediaStreamSource(stream);
+                    processor = audioContext.createScriptProcessor(4096, 1, 1);
+                    
+                    input.connect(processor);
+                    processor.connect(audioContext.destination);
+                    
+                    processor.onaudioprocess = (e) => {
+                        if (socket.readyState === WebSocket.OPEN && isRecording) {
+                            const inputData = e.inputBuffer.getChannelData(0);
+                            socket.send(inputData.buffer);
+                        }
+                    };
+                };
                 
-                audioContext = new AudioContext({ sampleRate: 16000 }); // Bắt buộc 16kHz
-                input = audioContext.createMediaStreamSource(stream);
-                
-                // Processor xử lý buffer âm thanh (Legacy approach nhưng dễ hiểu)
-                processor = audioContext.createScriptProcessor(4096, 1, 1);
-                
-                input.connect(processor);
-                processor.connect(audioContext.destination);
-
-                processor.onaudioprocess = (e) => {
-                    if (socket.readyState === WebSocket.OPEN) {
-                        // Lấy dữ liệu raw audio
-                        const inputData = e.inputBuffer.getChannelData(0);
-                        // Gửi mảng Float32 lên server
-                        socket.send(inputData.buffer); 
+                socket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    const outputEl = document.getElementById('output');
+                    
+                    if (data.status === 'success' && data.text) {
+                        outputEl.textContent = data.text;
+                        outputEl.className = 'output';
+                        addToHistory(data.text);
+                    } else if (data.status === 'error') {
+                        outputEl.textContent = `⚠️ Lỗi: ${data.message}`;
                     }
                 };
-            };
-
-            socket.onmessage = (event) => {
-                // Nhận text từ server trả về
-                document.getElementById('output').innerText = event.data;
-            };
+                
+                socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('❌ Lỗi kết nối', 'idle');
+                    stopRecording();
+                };
+                
+                socket.onclose = () => {
+                    updateStatus('📴 Đã ngắt kết nối', 'idle');
+                };
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Lỗi: ' + error.message);
+                updateStatus('❌ Lỗi khởi động', 'idle');
+                document.getElementById('btnStart').disabled = false;
+                document.getElementById('btnStop').disabled = true;
+            }
         }
-
+        
         function stopRecording() {
+            isRecording = false;
+            
             document.getElementById('btnStart').disabled = false;
             document.getElementById('btnStop').disabled = true;
             
-            if (socket) socket.close();
-            if (processor) processor.disconnect();
-            if (input) input.disconnect();
-            if (audioContext) audioContext.close();
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
             
-            document.getElementById('output').innerText += " (Đã dừng)";
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+            
+            if (input) {
+                input.disconnect();
+                input = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            updateStatus('⏸️ Đã dừng', 'idle');
         }
+        
+        // Cleanup khi đóng trang
+        window.addEventListener('beforeunload', stopRecording);
     </script>
 </body>
 </html>
